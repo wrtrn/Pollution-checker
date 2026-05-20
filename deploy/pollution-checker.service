@@ -1,0 +1,47 @@
+[Unit]
+Description=Cyprus DLI air quality checker (one-shot, runs from a timer)
+Documentation=https://github.com/wrtrn/Pollution-checker
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=pollution
+Group=pollution
+
+# Working directory holds the venv and the source tree.
+WorkingDirectory=/opt/pollution-checker
+
+# Secrets and tunables. Owned by root, mode 0640, group=pollution.
+EnvironmentFile=/etc/pollution-checker/env
+
+# State directory is writable by the service user.
+# StateDirectory= creates /var/lib/pollution-checker with mode 0750.
+StateDirectory=pollution-checker
+StateDirectoryMode=0750
+Environment=STATE_FILE=/var/lib/pollution-checker/state.json
+
+ExecStart=/opt/pollution-checker/.venv/bin/python -m pollution_checker
+
+# If the run fails (exit code != 0) systemd will not retry inside one tick.
+# The next timer tick will retry; this matches our consecutive-failure logic.
+SuccessExitStatus=0
+
+# Hardening — no reason for this script to touch anything beyond its dirs.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictNamespaces=true
+RestrictRealtime=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+SystemCallArchitectures=native
+ReadWritePaths=/var/lib/pollution-checker
+
+[Install]
+WantedBy=multi-user.target
