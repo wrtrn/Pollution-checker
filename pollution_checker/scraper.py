@@ -11,16 +11,35 @@ The mapping ``COLOR_TO_LEVEL`` matches the legend on the DLI site:
 Nicosia has two stations (Traffic + Residential). We aggregate their statuses
 by taking the maximum level — i.e. the worst air quality observed across the
 city — which is the safer choice for "should I close the windows?" decisions.
+
+Why we shell out to `curl` instead of using `requests`
+------------------------------------------------------
+The DLI site sits behind a WAF that fingerprints clients by their TLS
+ClientHello (and probably http/2 frame patterns). Python's
+``requests`` + ``urllib3`` produce a fingerprint distinct from any real
+browser, and the WAF returns 403 to it regardless of how careful we are
+with the HTTP-level headers (we tried: full browser header set, minimal
+``User-Agent`` only, no headers at all — all 403). The same machine
+running `curl -A 'Mozilla/5.0' <url>` gets a clean 200, because curl's
+TLS stack is a known good shape that the WAF allows.
+
+Replicating curl's TLS fingerprint from Python would require a special
+build (``curl_cffi``, ``pycurl`` against a custom libcurl, or
+``tls-client``). Each of these is heavy and finicky on ARM. Calling the
+system ``curl`` is the simplest robust path: it's already installed on
+every Linux distro we'd ever deploy to, the install script verifies its
+presence, and we keep the rest of the codebase pure-Python.
 """
 
 from __future__ import annotations
 
 import logging
 import re
+import shutil
+import subprocess
 import time
 from dataclasses import dataclass
 
-import requests
 from bs4 import BeautifulSoup
 
 from .config import (
@@ -42,19 +61,13 @@ COLOR_TO_LEVEL: dict[str, int] = {
 # Matches <span class="station-status-green"> etc.
 _STATUS_CLASS_RE = re.compile(r"station-status-(green|yellow|orange|red)")
 
-# DLI's WAF returns 403 for "scraper-like" full browser header sets
-# (Accept-Language + a specific Accept-Encoding + a tailored Accept) but
-# happily serves any request whose only meaningful header is User-Agent —
-# which is what plain `curl -A "..."` sends. So we keep this minimal and
-# let `requests` fill in its sensible defaults (Accept: */*,
-# Accept-Encoding: gzip, deflate, Connection: keep-alive). Anything more
-# triggered 403 in production testing from an Oracle Cloud Amsterdam IP.
-_BROWSER_HEADERS: dict[str, str] = {
-    "User-Agent": (
-        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
-        "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-    ),
-}
+# Matches plain `curl -A "..."` exactly: just User-Agent on top of curl's
+# own (very small) defaults. Production testing on Oracle Cloud Amsterdam
+# confirmed this yields 200 from the DLI WAF.
+_USER_AGENT = (
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+)
 
 
 class ScrapeError(RuntimeError):
@@ -68,21 +81,65 @@ class StationStatus:
     level: int
 
 
-def fetch_html(url: str = DLI_URL, *, session: requests.Session | None = None) -> str:
+def _fetch_once_via_curl(url: str, timeout_sec: int) -> str:
+    """Single HTTP fetch via the system ``curl`` binary.
+
+    Raises ``ScrapeError`` on any failure (curl missing, network error,
+    HTTP >= 400, timeout, suspiciously small body).
+    """
+    curl_bin = shutil.which("curl")
+    if curl_bin is None:
+        raise ScrapeError(
+            "The 'curl' binary was not found on PATH. Install it (Debian/Ubuntu: "
+            "'apt-get install -y curl') — this scraper relies on curl's TLS stack "
+            "to bypass the DLI WAF that rejects Python's TLS fingerprint."
+        )
+    cmd = [
+        curl_bin,
+        "--silent",
+        "--show-error",
+        "--location",  # follow redirects
+        "--fail",  # exit non-zero on HTTP >= 400
+        "--max-time",
+        str(timeout_sec),
+        "--user-agent",
+        _USER_AGENT,
+        url,
+    ]
+    try:
+        proc = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=timeout_sec + 5,
+            check=False,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise ScrapeError(f"curl timed out after {timeout_sec}s") from exc
+    if proc.returncode != 0:
+        # curl writes the HTTP status to stderr in --fail mode; surface it.
+        stderr = proc.stderr.strip() or "(no stderr)"
+        raise ScrapeError(f"curl exited with code {proc.returncode}: {stderr}")
+    body = proc.stdout
+    if not body or len(body) < 1000:
+        raise ScrapeError(f"Suspiciously small curl response body: {len(body)} bytes")
+    return body
+
+
+def fetch_html(url: str = DLI_URL, *, session: object | None = None) -> str:
     """Fetch the DLI front page with retry + exponential backoff.
+
+    The ``session`` parameter is kept for backwards compatibility with
+    tests but is unused — we always go through the system ``curl``.
 
     Raises ``ScrapeError`` if all attempts fail.
     """
-    sess = session or requests.Session()
+    del session  # unused
     last_exc: Exception | None = None
     for attempt in range(RETRY_ATTEMPTS):
         try:
-            resp = sess.get(url, headers=_BROWSER_HEADERS, timeout=HTTP_TIMEOUT)
-            resp.raise_for_status()
-            if not resp.text or len(resp.text) < 1000:
-                raise ScrapeError(f"Suspiciously small response body: {len(resp.text)} bytes")
-            return resp.text
-        except (requests.RequestException, ScrapeError) as exc:
+            return _fetch_once_via_curl(url, HTTP_TIMEOUT)
+        except ScrapeError as exc:
             last_exc = exc
             wait = RETRY_BACKOFF_BASE * (2**attempt)
             log.warning(
@@ -148,8 +205,11 @@ def nicosia_level(stations: list[StationStatus]) -> int | None:
     return max(s.level for s in nico)
 
 
-def get_current_level(*, session: requests.Session | None = None) -> int:
-    """High-level entry point used by ``main``. Raises ``ScrapeError`` on failure."""
+def get_current_level(*, session: object | None = None) -> int:
+    """High-level entry point used by ``main``. Raises ``ScrapeError`` on failure.
+
+    The ``session`` parameter is unused — kept only for API compatibility.
+    """
     html = fetch_html(session=session)
     stations = parse_stations(html)
     if not stations:
