@@ -61,6 +61,18 @@ if [[ ! -f "${ENV_FILE}" ]]; then
     echo "    EDIT IT NOW and put real BOT_TOKEN / CHANNEL_ID / ERROR_CHANNEL_ID."
 else
     echo "    Existing ${ENV_FILE} kept."
+    # Common upgrade hazard: older .env.example shipped a STATE_FILE= line
+    # that overrides the unit's StateDirectory and breaks the read-only-fs
+    # hardening. Detect and warn loudly.
+    if grep -qE '^[[:space:]]*STATE_FILE=' "${ENV_FILE}"; then
+        echo
+        echo "    WARNING: ${ENV_FILE} sets STATE_FILE=. The systemd unit pins"
+        echo "    STATE_FILE to /var/lib/pollution-checker/state.json and the"
+        echo "    EnvironmentFile would override that, causing read-only-fs"
+        echo "    errors. Removing the line so the unit's value wins."
+        sed -i.bak -E 's/^[[:space:]]*STATE_FILE=/# (removed by installer) STATE_FILE=/' "${ENV_FILE}"
+        echo "    Backup at ${ENV_FILE}.bak"
+    fi
 fi
 
 echo "==> Installing systemd units"

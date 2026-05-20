@@ -78,7 +78,7 @@ The free `VM.Standard.A1.Flex` ARM instance is more than enough — 4 vCPU / 24 
    ```bash
    sudo nano /etc/pollution-checker/env
    ```
-   Set `BOT_TOKEN`, `CHANNEL_ID`, `ERROR_CHANNEL_ID`. Leave `STATE_FILE` empty — the systemd unit overrides it to `/var/lib/pollution-checker/state.json`.
+   Set `BOT_TOKEN`, `CHANNEL_ID`, `ERROR_CHANNEL_ID`. **Do not set `STATE_FILE` here** — the systemd unit pins it to `/var/lib/pollution-checker/state.json`; setting it in the env file would override the unit and break the read-only-filesystem hardening.
 5. **Verify**:
    ```bash
    sudo systemctl start pollution-checker.service           # one immediate run

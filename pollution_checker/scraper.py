@@ -42,17 +42,18 @@ COLOR_TO_LEVEL: dict[str, int] = {
 # Matches <span class="station-status-green"> etc.
 _STATUS_CLASS_RE = re.compile(r"station-status-(green|yellow|orange|red)")
 
-# Headers chosen to look like a regular browser without tripping the site's
-# WAF: testing showed it returns 403 when Sec-Fetch-* or `br` encoding are
-# present, so we deliberately keep this list short.
+# DLI's WAF returns 403 for "scraper-like" full browser header sets
+# (Accept-Language + a specific Accept-Encoding + a tailored Accept) but
+# happily serves any request whose only meaningful header is User-Agent —
+# which is what plain `curl -A "..."` sends. So we keep this minimal and
+# let `requests` fill in its sensible defaults (Accept: */*,
+# Accept-Encoding: gzip, deflate, Connection: keep-alive). Anything more
+# triggered 403 in production testing from an Oracle Cloud Amsterdam IP.
 _BROWSER_HEADERS: dict[str, str] = {
     "User-Agent": (
         "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
         "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
     ),
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-    "Accept-Language": "en-US,en;q=0.9",
-    "Accept-Encoding": "gzip, deflate",
 }
 
 
