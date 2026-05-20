@@ -1,0 +1,15 @@
+[Unit]
+Description=Run pollution-checker every 15 minutes
+Documentation=https://github.com/wrtrn/Pollution-checker
+
+[Timer]
+# First run 1 minute after boot (gives the network time to settle).
+OnBootSec=1min
+# Then every 15 minutes after the previous run finished.
+OnUnitActiveSec=15min
+# If the system was off when a run was due, run as soon as it boots.
+Persistent=true
+Unit=pollution-checker.service
+
+[Install]
+WantedBy=timers.target
