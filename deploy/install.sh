@@ -32,6 +32,13 @@ if ! id -u "${SERVICE_USER}" >/dev/null 2>&1; then
     useradd --system --home-dir "${INSTALL_DIR}" --shell /usr/sbin/nologin "${SERVICE_USER}"
 fi
 
+echo "==> Verifying 'curl' is installed (required by the scraper)"
+if ! command -v curl >/dev/null 2>&1; then
+    echo "    'curl' not found. Install it before re-running, e.g.:" >&2
+    echo "      sudo apt-get update && sudo apt-get install -y curl" >&2
+    exit 1
+fi
+
 echo "==> Syncing source into ${INSTALL_DIR}"
 mkdir -p "${INSTALL_DIR}"
 rsync -a --delete \
