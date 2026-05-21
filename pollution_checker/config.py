@@ -37,6 +37,7 @@ class Config:
     state_file: Path
     dry_run: bool
     log_level: str
+    healthcheck_url: str | None
 
     @classmethod
     def from_env(cls) -> Config:
@@ -47,6 +48,7 @@ class Config:
         state_file = Path(os.environ.get("STATE_FILE", "./pollution_state.json")).expanduser()
         dry_run = os.environ.get("DRY_RUN", "0").strip() in {"1", "true", "TRUE", "yes"}
         log_level = os.environ.get("LOG_LEVEL", "INFO").upper()
+        healthcheck_url = os.environ.get("HEALTHCHECK_URL", "").strip() or None
         return cls(
             bot_token=bot_token,
             channel_id=channel_id,
@@ -54,6 +56,7 @@ class Config:
             state_file=state_file,
             dry_run=dry_run,
             log_level=log_level,
+            healthcheck_url=healthcheck_url,
         )
 
 

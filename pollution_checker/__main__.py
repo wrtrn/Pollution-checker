@@ -93,7 +93,18 @@ def main() -> int:
         print(f"Configuration error: {exc}", file=sys.stderr)
         return 2
     setup_logging(config.log_level)
-    return run_once(config)
+    
+    ret = run_once(config)
+    
+    if config.healthcheck_url and not config.dry_run:
+        import requests
+        try:
+            url = config.healthcheck_url if ret == 0 else f"{config.healthcheck_url}/fail"
+            requests.get(url, timeout=10)
+        except Exception as exc:
+            log.warning("Failed to ping healthcheck: %s", exc)
+            
+    return ret
 
 
 if __name__ == "__main__":
