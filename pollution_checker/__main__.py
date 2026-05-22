@@ -99,8 +99,7 @@ def main() -> int:
     if config.healthcheck_url and not config.dry_run:
         import requests
         try:
-            url = config.healthcheck_url if ret == 0 else f"{config.healthcheck_url}/fail"
-            requests.get(url, timeout=10)
+            requests.get(config.healthcheck_url, timeout=10)
         except Exception as exc:
             log.warning("Failed to ping healthcheck: %s", exc)
             
