@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 # How many consecutive failed scrapes trigger a "site is down" alert.
-DOWN_THRESHOLD = 5
+DOWN_THRESHOLD = 10
 
 # How many recent levels we keep in state for trend arrow computation.
 TREND_WINDOW = 5
