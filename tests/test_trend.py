@@ -42,10 +42,9 @@ def test_bad_band_first_run_flat_arrow() -> None:
     assert d.arrow == ARROW_FLAT
 
 
-def test_bad_band_same_level_flat_arrow() -> None:
+def test_bad_band_same_level_no_notify() -> None:
     d = decide(3, 3)
-    assert d.kind is NotifyKind.TREND_UPDATE
-    assert d.arrow == ARROW_FLAT
+    assert d.kind is NotifyKind.NONE
 
 
 def test_bad_band_rising() -> None:

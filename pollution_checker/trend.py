@@ -30,23 +30,20 @@ def decide(old_level: int | None, new_level: int) -> Decision:
     """Decide whether and how to notify, given previous and current levels.
 
     Rules:
-      * If new_level >= 3, we send a notification on every check (the
-        "trend mode") with an arrow showing direction vs the previous tick.
-        This keeps the user actively informed while air quality is bad.
-      * Otherwise (new_level in {1, 2}), we notify only on level changes.
+      * We notify only on level changes.
       * Transitions strictly between 1 and 2 are noise (windows can stay open
         either way), so we suppress them.
     """
-    if new_level >= 3:
-        arrow = _arrow(old_level, new_level)
-        return Decision(kind=NotifyKind.TREND_UPDATE, arrow=arrow)
-
     if old_level == new_level:
         return Decision(kind=NotifyKind.NONE)
 
     # Suppress jitter inside the "safe" band {1, 2}.
     if old_level is not None and {old_level, new_level} == {1, 2}:
         return Decision(kind=NotifyKind.NONE)
+
+    if new_level >= 3:
+        arrow = _arrow(old_level, new_level)
+        return Decision(kind=NotifyKind.TREND_UPDATE, arrow=arrow)
 
     # Level dropped from "bad" (>=3) to "safe" (<=2): this is good news, notify.
     return Decision(kind=NotifyKind.LEVEL_CHANGE)
