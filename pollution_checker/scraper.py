@@ -75,10 +75,18 @@ class ScrapeError(RuntimeError):
 
 
 @dataclass(frozen=True)
+class Pollutant:
+    name: str
+    value: str
+    level: int
+
+
+@dataclass(frozen=True)
 class StationStatus:
     name: str
     color: str
     level: int
+    pollutants: tuple[Pollutant, ...] = ()
 
 
 def _fetch_once_via_curl(url: str, timeout_sec: int) -> str:
@@ -173,7 +181,31 @@ def parse_stations(html: str) -> list[StationStatus]:
         if color is None:
             log.warning("No status marker found for station %r; skipping.", name)
             continue
-        stations.append(StationStatus(name=name, color=color, level=COLOR_TO_LEVEL[color]))
+        pollutants = []
+        card = h4.find_parent("div", class_=lambda c: c and ("col-" in c or "col" == c))
+        if card:
+            for label_node in card.find_all(class_="pollutant-label"):
+                p_name = label_node.get_text(strip=True).replace(":", "").strip()
+                val_node = label_node.find_next_sibling(class_="pollutant-value")
+                if not val_node:
+                    parent = label_node.parent
+                    if parent:
+                        val_node = parent.find(class_="pollutant-value")
+                if not val_node:
+                    continue
+                p_val = val_node.get_text(strip=True)
+                
+                p_color = "green"
+                color_node = label_node.find_parent(class_=re.compile(r"pollutant-(green|yellow|orange|red)"))
+                if color_node:
+                    for cls in color_node.get("class", []):
+                        m = re.match(r"pollutant-(green|yellow|orange|red)", cls)
+                        if m:
+                            p_color = m.group(1)
+                            break
+                pollutants.append(Pollutant(name=p_name, value=p_val, level=COLOR_TO_LEVEL.get(p_color, 1)))
+
+        stations.append(StationStatus(name=name, color=color, level=COLOR_TO_LEVEL[color], pollutants=tuple(pollutants)))
     return stations
 
 
@@ -205,7 +237,7 @@ def nicosia_level(stations: list[StationStatus]) -> int | None:
     return max(s.level for s in nico)
 
 
-def get_current_level(*, session: object | None = None) -> int:
+def get_current_level(*, session: object | None = None) -> tuple[int, list[Pollutant]]:
     """High-level entry point used by ``main``. Raises ``ScrapeError`` on failure.
 
     The ``session`` parameter is unused — kept only for API compatibility.
@@ -217,10 +249,19 @@ def get_current_level(*, session: object | None = None) -> int:
     level = nicosia_level(stations)
     if level is None:
         raise ScrapeError("Parser found stations but no Nicosia entry.")
+        
+    nico = [s for s in stations if "Nicosia" in s.name]
+    worst_pollutants = []
+    for s in nico:
+        for p in s.pollutants:
+            if p.level >= 3:
+                worst_pollutants.append(p)
+    worst_pollutants.sort(key=lambda p: p.level, reverse=True)
+    
     log.info(
         "Scraped %d stations; Nicosia aggregate level = %d (%s)",
         len(stations),
         level,
-        ", ".join(f"{s.name}:{s.color}" for s in stations if "Nicosia" in s.name),
+        ", ".join(f"{s.name}:{s.color}" for s in nico),
     )
-    return level
+    return level, worst_pollutants

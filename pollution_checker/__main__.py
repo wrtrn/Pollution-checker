@@ -34,11 +34,11 @@ def run_once(config: Config) -> int:
     notifier = Notifier(config)
 
     try:
-        level = get_current_level()
+        level, worst_pollutants = get_current_level()
     except ScrapeError as exc:
         return _handle_failure(config, state, notifier, exc)
 
-    return _handle_success(config, state, notifier, level)
+    return _handle_success(config, state, notifier, level, worst_pollutants)
 
 
 def _handle_failure(config, state, notifier, exc: ScrapeError) -> int:
@@ -57,7 +57,7 @@ def _handle_failure(config, state, notifier, exc: ScrapeError) -> int:
     return 1
 
 
-def _handle_success(config, state, notifier, level: int) -> int:
+def _handle_success(config, state, notifier, level: int, worst_pollutants: list) -> int:
     old_level = state.last_level
 
     # Recovery: notify in error channel if we previously alerted about an outage.
@@ -67,10 +67,10 @@ def _handle_success(config, state, notifier, level: int) -> int:
 
     decision = decide(old_level, level)
     if decision.kind is NotifyKind.LEVEL_CHANGE:
-        notifier.send_main(format_level_change(old_level, level))
+        notifier.send_main(format_level_change(old_level, level, worst_pollutants))
     elif decision.kind is NotifyKind.TREND_UPDATE:
         assert decision.arrow is not None
-        notifier.send_main(format_trend_update(old_level, level, decision.arrow))
+        notifier.send_main(format_trend_update(old_level, level, decision.arrow, worst_pollutants))
     else:
         log.info("Level %s, no notification needed (decision=%s).", level, decision.kind.value)
 

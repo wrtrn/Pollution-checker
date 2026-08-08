@@ -31,6 +31,20 @@ LEVEL_ADVICE = {
 }
 
 
+def get_pollutant_thresholds(name: str) -> str | None:
+    mapping = {
+        "PM₁₀": "🟢 0-50 | 🟡 50-100 | 🟠 100-200 | 🔴 >200",
+        "PM₂.₅": "🟢 0-25 | 🟡 25-50 | 🟠 50-100 | 🔴 >100",
+        "O₃": "🟢 0-100 | 🟡 100-140 | 🟠 140-180 | 🔴 >180",
+        "NO₂": "🟢 0-100 | 🟡 100-150 | 🟠 150-200 | 🔴 >200",
+        "SO₂": "🟢 0-150 | 🟡 150-250 | 🟠 250-350 | 🔴 >350",
+        "CO": "🟢 0-7000 | 🟡 7000-15000 | 🟠 15000-20000 | 🔴 >20000",
+        "Benzene": "🟢 0-5 | 🟡 5-10 | 🟠 10-15 | 🔴 >15",
+        "C₆H₆": "🟢 0-5 | 🟡 5-10 | 🟠 10-15 | 🔴 >15",
+    }
+    return mapping.get(name)
+
+
 class Notifier:
     """Wrapper around the Telegram Bot API with built-in retry."""
 
@@ -80,7 +94,7 @@ class Notifier:
 # ---------- Message builders (pure functions, easy to unit-test) ----------
 
 
-def format_level_change(old: int | None, new: int) -> str:
+def format_level_change(old: int | None, new: int, worst_pollutants: list | None = None) -> str:
     emoji = LEVEL_EMOJI[new]
     label = LEVEL_LABEL[new]
     advice = LEVEL_ADVICE[new]
@@ -88,10 +102,23 @@ def format_level_change(old: int | None, new: int) -> str:
         head = f"{emoji} Уровень {new} ({label})"
     else:
         head = f"{emoji} Уровень {old} → {new} ({label})"
+        
+    if new >= 3 and worst_pollutants:
+        lines = ["\nПревышены параметры:"]
+        seen = set()
+        for p in worst_pollutants:
+            if p.name not in seen:
+                lines.append(f"• {p.name}: {p.value} (Уровень {p.level})")
+                thresholds = get_pollutant_thresholds(p.name)
+                if thresholds:
+                    lines.append(f"  Пороги: {thresholds}")
+                seen.add(p.name)
+        advice += "\n" + "\n".join(lines)
+        
     return f"{head}\n{advice}"
 
 
-def format_trend_update(old: int | None, new: int, arrow: str) -> str:
+def format_trend_update(old: int | None, new: int, arrow: str, worst_pollutants: list | None = None) -> str:
     """Periodic update sent on every tick while level >= 3."""
     emoji = LEVEL_EMOJI[new]
     label = LEVEL_LABEL[new]
@@ -100,6 +127,19 @@ def format_trend_update(old: int | None, new: int, arrow: str) -> str:
         head = f"{emoji} Уровень {new} ({label}) {arrow}"
     else:
         head = f"{emoji} Уровень {old} → {new} ({label}) {arrow}"
+        
+    if new >= 3 and worst_pollutants:
+        lines = ["\nПревышены параметры:"]
+        seen = set()
+        for p in worst_pollutants:
+            if p.name not in seen:
+                lines.append(f"• {p.name}: {p.value} (Уровень {p.level})")
+                thresholds = get_pollutant_thresholds(p.name)
+                if thresholds:
+                    lines.append(f"  Пороги: {thresholds}")
+                seen.add(p.name)
+        advice += "\n" + "\n".join(lines)
+        
     return f"{head}\n{advice}"
 
 
